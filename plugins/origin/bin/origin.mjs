@@ -53,35 +53,47 @@ async function connect(args) {
   if (!res.ok) return console.log(`Could not reach ORIGIN at ${site()} (${res.status || 'network'}): ${(await res.text()).slice(0, 200)}`);
   const p = await res.json();
   writeSecret(pairingPath, { id: p.id, user_code: p.user_code, expires_at: p.expires_at, private_key: privateKey.export({ format: 'pem', type: 'pkcs8' }), url: site() });
-  // Collect in the background, so this command returns at once.
-  spawn(process.execPath, [fileURLToPath(import.meta.url), 'collect'], { detached: true, stdio: 'ignore' }).unref();
   if (process.platform === 'darwin' && !process.env.ORIGIN_NO_BROWSER) spawn('open', [p.verification_url], { detached: true, stdio: 'ignore' }).unref();
+  // Wait here for the approval, so the account this computer joins is the last thing shown.
+  const waitMs = Number(process.env.ORIGIN_CONNECT_WAIT_MS ?? 90_000);
+  const r = await collect({ until: Date.now() + waitMs });
+  if (r === 'connected') return console.log(joinedLine());
+  if (r && r !== 'pending') return console.log(`Your code ${p.user_code} ended without connecting (${r}). Run /origin:connect again for a fresh code.`);
+  // Not approved yet: keep waiting in the background; the next prompt shows the account once.
+  spawn(process.execPath, [fileURLToPath(import.meta.url), 'collect'], { detached: true, stdio: 'ignore' }).unref();
   console.log([
     `Your code: ${p.user_code}`,
-    `Open ${p.verification_url} (it should have opened in your browser), sign in, check the code matches, and approve.`,
-    `This computer finishes connecting by itself within a few seconds of your approval. The code expires in 15 minutes.`,
-    `Then run /origin:status: it names the account this computer joined. If it is not yours, run /origin:disconnect.`,
+    `Approve it at ${p.verification_url} (it should have opened in your browser). Check the code matches what is shown here.`,
+    `Once you approve, the next message you send shows which account this computer joined. The code expires in 15 minutes.`,
   ].join('\n'));
 }
 
-async function collect() {
+function joinedLine() {
+  const c = readJson(configPath) ?? {};
+  return `Connected to ${c.account ?? 'an ORIGIN account'}, recording into ${c.project_name ?? 'its project'}. If that is not your account, run /origin:disconnect now.`;
+}
+
+/** Wait for the approval and save the connection. Returns 'connected', 'pending' (gave up waiting), or how it ended. */
+async function collect({ until, announce = false } = {}) {
   const p = readJson(pairingPath);
-  if (!p) return;
-  const deadline = Math.min(Date.parse(p.expires_at), Date.now() + 16 * 60_000);
+  if (!p) return null;
+  const deadline = Math.min(Date.parse(p.expires_at), until ?? Date.now() + 16 * 60_000);
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 2500));
     const r = await fetch(`${p.url}/api/pair/${p.id}`, { method: 'POST', signal: AbortSignal.timeout(10_000) }).then((x) => x.json()).catch(() => null);
     if (!r || r.status === 'pending') continue;
-    if (r.status === 'approved') {
-      try {
-        const opened = JSON.parse(openSealed(p.private_key, r.sealed));
-        writeSecret(configPath, { url: p.url, token: opened.token, project_id: opened.project_id, connection_id: opened.connection_id, account: opened.account ?? null, project_name: opened.project_name ?? null, paired_at: new Date().toISOString() });
-        log(`paired with ${p.url} (connection ${opened.connection_id})`);
-      } catch (e) { log(`pairing: could not open the sealed token: ${e.message}`); }
-    } else log(`pairing ${p.user_code} ended: ${r.status}`);
-    break;
+    rmSync(pairingPath, { force: true });
+    if (r.status !== 'approved') { log(`pairing ${p.user_code} ended: ${r.status}`); return r.status; }
+    try {
+      const opened = JSON.parse(openSealed(p.private_key, r.sealed));
+      // announce: the hook shows the joined account once, on the next prompt (background collection).
+      writeSecret(configPath, { url: p.url, token: opened.token, project_id: opened.project_id, connection_id: opened.connection_id, account: opened.account ?? null, project_name: opened.project_name ?? null, paired_at: new Date().toISOString(), announce });
+      log(`paired with ${p.url} (connection ${opened.connection_id})`);
+      return 'connected';
+    } catch (e) { log(`pairing: could not open the sealed token: ${e.message}`); return 'failed'; }
   }
-  rmSync(pairingPath, { force: true });
+  if (Date.now() >= Date.parse(p.expires_at)) { rmSync(pairingPath, { force: true }); return 'expired'; }
+  return 'pending';
 }
 
 async function status() {
@@ -112,7 +124,7 @@ function mcpHeaders() {
 const [cmd, ...rest] = process.argv.slice(2);
 const run = {
   connect: () => connect(rest),
-  collect,
+  collect: () => collect({ announce: true }),
   status,
   pause: () => { ensureDir(); writeFileSync(pauseFlag, ''); console.log('Paused: nothing is sent from this computer until /origin:resume.'); },
   resume: () => { rmSync(pauseFlag, { force: true }); console.log('Resumed: recording from this computer is on.'); },

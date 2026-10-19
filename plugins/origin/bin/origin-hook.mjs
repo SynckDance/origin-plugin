@@ -134,6 +134,14 @@ async function main() {
   }
   if (!token()) return log('no ORIGIN token configured; nothing sent');
 
+  // Once, after a pairing finished in the background: show the person (not Claude) which account
+  // this computer joined. systemMessage is displayed to the user; nothing enters Claude's context.
+  const cfg = config();
+  if (cfg.announce && cfg.token) {
+    try { writeFileSync(join(dir, 'config.json'), JSON.stringify({ ...cfg, announce: false }, null, 2), { mode: 0o600 }); } catch {}
+    process.stdout.write(JSON.stringify({ systemMessage: `ORIGIN: this computer is now connected to ${cfg.account ?? 'an ORIGIN account'}, recording into ${cfg.project_name ?? 'its project'}. If that is not your account, run /origin:disconnect now.` }));
+  }
+
   if (input.hook_event_name === 'UserPromptSubmit') {
     const prompt = String(input.prompt ?? '');
     // (1) First message, with its text (Ruling 3).
