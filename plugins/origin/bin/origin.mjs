@@ -60,7 +60,7 @@ async function connect(args) {
     `Your code: ${p.user_code}`,
     `Open ${p.verification_url} (it should have opened in your browser), sign in, check the code matches, and approve.`,
     `This computer finishes connecting by itself within a few seconds of your approval. The code expires in 15 minutes.`,
-    `Then run /origin:status to confirm.`,
+    `Then run /origin:status: it names the account this computer joined. If it is not yours, run /origin:disconnect.`,
   ].join('\n'));
 }
 
@@ -75,7 +75,7 @@ async function collect() {
     if (r.status === 'approved') {
       try {
         const opened = JSON.parse(openSealed(p.private_key, r.sealed));
-        writeSecret(configPath, { url: p.url, token: opened.token, project_id: opened.project_id, connection_id: opened.connection_id, paired_at: new Date().toISOString() });
+        writeSecret(configPath, { url: p.url, token: opened.token, project_id: opened.project_id, connection_id: opened.connection_id, account: opened.account ?? null, project_name: opened.project_name ?? null, paired_at: new Date().toISOString() });
         log(`paired with ${p.url} (connection ${opened.connection_id})`);
       } catch (e) { log(`pairing: could not open the sealed token: ${e.message}`); }
     } else log(`pairing ${p.user_code} ended: ${r.status}`);
@@ -89,7 +89,8 @@ async function status() {
   const pending = readJson(pairingPath);
   const lines = [];
   if (c?.token) {
-    lines.push(`Connected to ${c.url} since ${c.paired_at ?? 'an earlier pairing'} (connection ${c.connection_id ?? 'unknown'}).`);
+    lines.push(`Connected to the ORIGIN account ${c.account ?? '(account not recorded; run /origin:connect again to see it)'}, recording into ${c.project_name ?? 'its project'}, at ${c.url}, since ${c.paired_at ?? 'an earlier pairing'}.`);
+    lines.push('If that is not your account, run /origin:disconnect at once and revoke it on the site.');
     const r = await fetch(`${c.url}/api/mcp`, { method: 'POST', headers: { authorization: `Bearer ${c.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }), signal: AbortSignal.timeout(8000) }).catch(() => null);
     lines.push(!r ? 'ORIGIN could not be reached just now.' : r.status === 401 || r.status === 403 ? 'The site no longer accepts this connection (it was revoked). Run /origin:connect to pair again.' : 'The site accepts this connection.');
   } else if (pending) lines.push(`Waiting for approval of code ${pending.user_code} at ${pending.url}/connect.`);

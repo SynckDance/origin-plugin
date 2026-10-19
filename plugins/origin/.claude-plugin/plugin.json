@@ -1,6 +1,6 @@
 {
   "name": "origin",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ORIGIN keeps a record of how your ideas develop when you work with Claude Code: what was recorded, how and when, sealed and independently timestamped on request. It never decides who had an idea.",
   "author": { "name": "ORIGIN", "url": "https://theoriginrecord.com" },
   "homepage": "https://theoriginrecord.com",
