@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "origin": {
+      "type": "http",
+      "url": "${ORIGIN_URL:-https://theoriginrecord.com}/api/mcp",
+      "headersHelper": "node \"${CLAUDE_PLUGIN_ROOT}/bin/origin.mjs\" mcp-headers"
+    }
+  }
+}

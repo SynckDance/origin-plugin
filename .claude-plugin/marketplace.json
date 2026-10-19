@@ -1,0 +1,8 @@
+{
+  "name": "origin",
+  "owner": { "name": "The Origin Record", "url": "https://theoriginrecord.com" },
+  "metadata": { "description": "ORIGIN: a record of how your ideas develop when you work with AI." },
+  "plugins": [
+    { "name": "origin", "source": "./plugins/origin", "description": "A record of how your ideas develop when you work with Claude Code." }
+  ]
+}
